@@ -28,6 +28,10 @@ module CPU_ALU (
             CPU_NOT: result = ~a; // NOT 
             CPU_XOR: result = a ^ b; // XOR
             CPU_CMP: result = flags; // CMP
+            CPU_SHL: result = a << b; // SHL
+            CPU_SHR: result = a >> b; // SHR
+            CPU_ASHL: result = $signed(a) <<< b; // ASHL
+            CPU_ASHR: result = $signed(a) >>> b; // ASHR
             default: result = 8'hFF; // default to all 1s for unknown opcodes   
         endcase
     end

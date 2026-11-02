@@ -12,7 +12,7 @@
 // MOVRR src (register) dst (register)
 // MOVRM src (register) dst (memory)
 // MOVMR src (memory) dst (register)
-// MOVIR imm24 (immediate) dst (register)
+// MOVIR imm8 (immediate) dst (register)
 /// math: (a, b, dest are registers)
 // ADD a b dest
 // SUB a b dest
@@ -45,7 +45,11 @@ typedef enum logic [CPU_OP_WIDTH-1:0] {
     CPU_OR  = 4'b0011,
     CPU_NOT = 4'b0100,
     CPU_XOR = 4'b0101,
-    CPU_CMP = 4'b0110
+    CPU_CMP = 4'b0110,
+    CPU_SHL = 4'b0111,
+    CPU_SHR = 4'b1000,
+    CPU_ASHL = 4'b1001,
+    CPU_ASHR = 4'b1010
 } alu_op_t;
 
 typedef enum logic [CPU_OP_WIDTH-1:0] {
@@ -84,7 +88,7 @@ module DECODER(
 
     // assume we're always at the start of an instruction, and we will read the first part (OP) first
     always_comb begin
-        mode = instruction_mode_t'(in[0][7:8-CPU_MODE_WIDTH]); // extract the mode from the first byte
+        mode = instruction_mode_t'(in[0][7:8-CPU_MODE_WIDTH]);
         opcode = in[0][CPU_OP_WIDTH-1:0];
 
         case (mode)

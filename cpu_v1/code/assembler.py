@@ -11,13 +11,17 @@ class MOVOp(Enum):
     MOVIR = 0b011
 
 class ALUOp(Enum):
-    ADD = 0b000
-    SUB = 0b001
-    AND = 0b010
-    OR  = 0b011
-    NOT = 0b100
-    XOR = 0b101
-    CMP = 0b110
+    ADD  = 0b0000
+    SUB  = 0b0001
+    AND  = 0b0010
+    OR   = 0b0011
+    NOT  = 0b0100
+    XOR  = 0b0101
+    CMP  = 0b0110
+    SHL  = 0b0111
+    SHR  = 0b1000
+    ASHL = 0b1001
+    ASHR = 0b1010
 
 class JMPOp(Enum):
     JMP  = 0b0000
@@ -150,6 +154,8 @@ with open(src_file, "r") as f:
                     output_data.append(int(part[2:], 16))
                 elif part.startswith("0b"):
                     output_data.append(int(part[2:], 2))
+                elif part.startswith("-"):
+                    output_data.append(-int(part[1:]))
                 elif part.isdigit():
                     output_data.append(int(part))
                 elif part in labels:
@@ -162,6 +168,9 @@ with open(src_file, "r") as f:
 
 with open(output_file, "w") as f:
     for data in output_data:
+        # Handle negative numbers
+        data = data & 0xFF  # Ensure data is in the range of 0-255
+
         f.write(f"{data:08b}\n")
 
 print(f"[ASM] Assembly completed. Output written to {output_file}")
