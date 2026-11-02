@@ -20,7 +20,6 @@
 // OR a b dest
 // NOT a dest
 // XOR a b dest
-/// conditional: a op b -> flags (z, e, l, g)
 // CMP a b
 /// jumping: set PC to dst (address)
 // JMP dst
@@ -33,41 +32,41 @@
 // HALT
 
 typedef enum logic [CPU_OP_WIDTH-1:0] {
-    CPU_MOVRR = 3'b000,
-    CPU_MOVRM = 3'b001,
-    CPU_MOVMR = 3'b010,
-    CPU_MOVIR = 3'b011
+    CPU_MOVRR = 4'b0000,
+    CPU_MOVRM = 4'b0001,
+    CPU_MOVMR = 4'b0010,
+    CPU_MOVIR = 4'b0011
 } mov_op_t;
 
 typedef enum logic [CPU_OP_WIDTH-1:0] {
-    CPU_ADD = 3'b000,
-    CPU_SUB = 3'b001,
-    CPU_AND = 3'b010,
-    CPU_OR  = 3'b011,
-    CPU_NOT = 3'b100,
-    CPU_XOR = 3'b101
+    CPU_ADD = 4'b0000,
+    CPU_SUB = 4'b0001,
+    CPU_AND = 4'b0010,
+    CPU_OR  = 4'b0011,
+    CPU_NOT = 4'b0100,
+    CPU_XOR = 4'b0101,
+    CPU_CMP = 4'b0110
 } alu_op_t;
 
 typedef enum logic [CPU_OP_WIDTH-1:0] {
-    CPU_CMP = 3'b000
-} cmp_op_t;
-
-typedef enum logic [CPU_OP_WIDTH-1:0] {
-    CPU_JMP  = 3'b000,
-    CPU_JZ   = 3'b001,
-    CPU_JNZ  = 3'b010,
-    CPU_JL   = 3'b011,
-    CPU_JLE  = 3'b100,
-    CPU_JG   = 3'b101,
-    CPU_JGE  = 3'b110,
-    CPU_HALT = 3'b111
+    CPU_JMP  = 4'b0000,
+    CPU_JE   = 4'b0001,
+    CPU_JNE  = 4'b0010,
+    CPU_JL   = 4'b0011,
+    CPU_JLE  = 4'b0100,
+    CPU_JG   = 4'b0101,
+    CPU_JGE  = 4'b0110,
+    CPU_HALT = 4'b0111,
+    CPU_JUL  = 4'b1000, // jump if unsigned less
+    CPU_JULE = 4'b1001, // jump if unsigned less or equal
+    CPU_JUG  = 4'b1010, // jump if unsigned greater
+    CPU_JUGE = 4'b1011  // jump if unsigned greater or equal
 } jmp_op_t;
 
-typedef enum logic [1:0] {
+typedef enum logic [CPU_MODE_WIDTH-1:0] {
     CPU_MOV_MODE  = 2'b00,
     CPU_ALU_MODE  = 2'b01,
-    CPU_CMP_MODE  = 2'b10,
-    CPU_JMP_MODE = 2'b11
+    CPU_JMP_MODE = 2'b10
 } instruction_mode_t;
 
 // Biggest possible instruction consists of 4 parts: OP, A, B, C
@@ -85,8 +84,8 @@ module DECODER(
 
     // assume we're always at the start of an instruction, and we will read the first part (OP) first
     always_comb begin
-        mode = instruction_mode_t'(in[0][7:6]);
-        opcode = in[0][5:3];
+        mode = instruction_mode_t'(in[0][7:8-CPU_MODE_WIDTH]); // extract the mode from the first byte
+        opcode = in[0][CPU_OP_WIDTH-1:0];
 
         case (mode)
             CPU_MOV_MODE: begin
@@ -96,23 +95,26 @@ module DECODER(
                 instruction_size = 3;
             end
             CPU_ALU_MODE: begin
-                if (opcode == CPU_NOT) begin
-                    operand_a = in[1]; // src
-                    operand_b = 0; // not used
-                    operand_c = in[2]; // dest
-                    instruction_size = 3;
-                end else begin
-                    operand_a = in[1]; // src1
-                    operand_b = in[2]; // src2
-                    operand_c = in[3]; // dest
-                    instruction_size = 4;
-                end
-            end
-            CPU_CMP_MODE: begin
-                operand_a = in[1]; // src1
-                operand_b = in[2]; // src2
-                operand_c = 0; // not used
-                instruction_size = 3;
+                case (opcode)
+                    CPU_NOT: begin
+                        operand_a = in[1]; // src
+                        operand_b = 0; // not used
+                        operand_c = in[2]; // dest
+                        instruction_size = 3;
+                    end
+                    CPU_CMP: begin
+                        operand_a = in[1]; // src1
+                        operand_b = in[2]; // src2
+                        operand_c = 0; // not used
+                        instruction_size = 3;
+                    end
+                    default: begin
+                        operand_a = in[1]; // src1
+                        operand_b = in[2]; // src2
+                        operand_c = in[3]; // dest
+                        instruction_size = 4;
+                    end
+                endcase
             end
             CPU_JMP_MODE: begin
                 operand_a = in[1]; // dst address
@@ -127,7 +129,7 @@ module DECODER(
             end
             default: begin
                 // synthesis translate_off
-                $error("Unknown instruction mode: %b", mode);
+                $error("Unknown instruction mode: %b, in: %h", mode, {in[0], in[1], in[2], in[3]});
                 // synthesis translate_on
                 operand_a = 8'hFF; // invalid
                 operand_b = 8'hFF; // invalid

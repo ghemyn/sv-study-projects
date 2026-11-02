@@ -3,7 +3,6 @@
 `include "ram.sv"
 `include "decoder.sv"
 `include "alu.sv"
-`include "comparator.sv"
 
 `include "defines.sv"
 
@@ -27,13 +26,10 @@ module CPU(
     logic [BIT_DEPTH - 1 : 0] operand_c;
 
     logic [BIT_DEPTH - 1 : 0] alu_result;
-    logic [BIT_DEPTH - 1 : 0] comp_result;
+    logic [BIT_DEPTH - 1 : 0] alu_flags;
 
     logic pc_we; // write-enable for the program counter
-    logic cmp_zero;
-    logic cmp_equal;
-    logic cmp_less;
-    logic cmp_greater;
+    logic cmp_eq, cmp_sl, cmp_sg, cmp_ul, cmp_ug;
     logic [BIT_DEPTH - 1 : 0] cmp_flags_reg; // register to hold comparison result
     logic [BIT_DEPTH - 1 : 0] regs [REG_COUNT-1 : 0];
     logic [BIT_DEPTH - 1 : 0] bus_wr_val;
@@ -66,9 +62,8 @@ module CPU(
         .operand_c(operand_c) 
     );
     
-    CPU_ALU alu ( .a(bus_rd_val1), .b(bus_rd_val2), .op(opcode), .result(alu_result) );
-    COMP comp( .a(bus_rd_val1), .b(bus_rd_val2), .op(opcode), .result(comp_result) );
-    
+    CPU_ALU alu ( .a(bus_rd_val1), .b(bus_rd_val2), .op(opcode), .result(alu_result), .flags(alu_flags) );
+
     always_comb begin
         case (instruction_mode)
             CPU_MOV_MODE: begin
@@ -87,7 +82,7 @@ module CPU(
                     end
                     default: begin
                         // synthesis translate_off
-                        $error("Unknown MOV opcode: %b", opcode);
+                        $error("Unknown MOV opcode: %b at PC: %h", opcode, rom_read_addr);
                         // synthesis translate_on
                         bus_rd_val1 = 8'hFF; // invalid
                     end
@@ -99,17 +94,13 @@ module CPU(
                 bus_rd_val1 = regs[operand_a[REG_IDX_WIDTH-1:0]];
                 bus_rd_val2 = regs[operand_b[REG_IDX_WIDTH-1:0]];
             end 
-            CPU_CMP_MODE: begin 
-                bus_rd_val1 = regs[operand_a[REG_IDX_WIDTH-1:0]];
-                bus_rd_val2 = regs[operand_b[REG_IDX_WIDTH-1:0]];
-            end
             CPU_JMP_MODE: begin
                 bus_rd_val1 = operand_a; // jmp to the address in operand_a
                 bus_rd_val2 = 0; // unused
             end
             default: begin
                 // synthesis translate_off
-                $error("Unknown instruction mode: %b", instruction_mode);
+                $error("Unknown instruction mode: %b at PC: %h", instruction_mode, rom_read_addr);
                 // synthesis translate_on
                 bus_rd_val1 = 0;
                 bus_rd_val2 = 0;
@@ -123,39 +114,52 @@ module CPU(
         case (instruction_mode)
             CPU_MOV_MODE: bus_wr_val = bus_rd_val1;
             CPU_ALU_MODE: bus_wr_val = alu_result;
-            CPU_CMP_MODE: bus_wr_val = comp_result;
             CPU_JMP_MODE: bus_wr_val = bus_rd_val1;
             default:  bus_wr_val = 8'hFF; // invalid
         endcase
     end
 
     always_comb begin
-        cmp_zero = (cmp_flags_reg[0]);
-        cmp_equal = (cmp_flags_reg[1]);
-        cmp_less = (cmp_flags_reg[2]);
-        cmp_greater = (cmp_flags_reg[3]);
+        cmp_eq = (cmp_flags_reg[0]);
+        cmp_sl = (cmp_flags_reg[1]);
+        cmp_sg = (cmp_flags_reg[2]);
+        cmp_ul = (cmp_flags_reg[3]);
+        cmp_ug = (cmp_flags_reg[4]);
+
+        // cmp flags are set by the ALU at all times
+        // E (0), SL (signed less)(1), SG (signed greater)(2), 
+        // UL (unsigned less)(3), UG (unsigned greater)(4)
 
         case (instruction_mode)
             CPU_MOV_MODE: pc_we = 1'b0; // MOV instructions always increment PC
             CPU_ALU_MODE: pc_we = 1'b0; // ALU instructions always increment PC
-            CPU_CMP_MODE: pc_we = 1'b0; // CMP instructions always increment PC
             CPU_JMP_MODE: begin
                 case (opcode)
                     CPU_JMP: pc_we = 1'b1; // always jump
-                    CPU_JZ: pc_we = cmp_zero;
-                    CPU_JNZ: pc_we = ~cmp_zero;
-                    CPU_JL: pc_we = cmp_less;
-                    CPU_JLE: pc_we = cmp_less | cmp_equal;
-                    CPU_JG: pc_we = cmp_greater;
-                    CPU_JGE: pc_we = cmp_greater | cmp_equal;
+                    CPU_JE: pc_we = cmp_eq;
+                    CPU_JNE: pc_we = ~cmp_eq;
+                    CPU_JL: pc_we = cmp_sl;
+                    CPU_JLE: pc_we = cmp_sl | cmp_eq;
+                    CPU_JG: pc_we = cmp_sg;
+                    CPU_JGE: pc_we = cmp_sg | cmp_eq;
                     CPU_HALT: pc_we = 1'b0; // HALT increments PC by 0 - therefore halting the CPU
+                    CPU_JUL: pc_we = cmp_ul;
+                    CPU_JULE: pc_we = cmp_ul | cmp_eq;
+                    CPU_JUG: pc_we = cmp_ug;
+                    CPU_JUGE: pc_we = cmp_ug | cmp_eq;
                     default: begin
                         // synthesis translate_off
-                        $error("Unknown JUMP opcode: %b", opcode);
+                        $error("Unknown JUMP opcode: %b at PC: %h", opcode, rom_read_addr);
                         // synthesis translate_on
                         pc_we = 1'b0; // unknown instruction mode, do not overwrite PC
                     end
                 endcase
+            end
+            default: begin
+                // synthesis translate_off
+                $error("Unknown instruction mode: %b at PC: %h", instruction_mode, rom_read_addr);
+                // synthesis translate_on
+                pc_we = 1'b0; // unknown instruction mode, do not overwrite PC
             end
         endcase
     end
@@ -170,7 +174,7 @@ module CPU(
                     CPU_MOVIR: ram_rw_addr = 0; // not used
                     default: begin
                         // synthesis translate_off
-                        $error("Unknown MOV opcode: %b", opcode);
+                        $error("Unknown MOV opcode: %b at PC: %d", opcode, rom_read_addr);
                         // synthesis translate_on
                         ram_rw_addr = 0; // default address to avoid latches
                     end
@@ -180,10 +184,6 @@ module CPU(
             end
             CPU_ALU_MODE: begin
                 ram_we = 1'b0; // ALU instructions do not write to RAM
-                ram_rw_addr = 0; // default address to avoid latches
-            end
-            CPU_CMP_MODE: begin 
-                ram_we = 1'b0; // CMP instructions do not write to RAM
                 ram_rw_addr = 0; // default address to avoid latches
             end
             CPU_JMP_MODE: begin
@@ -235,20 +235,21 @@ module CPU(
                         end
                         default: begin
                             // synthesis translate_off
-                            $error("Unknown MOV opcode: %b", opcode);
+                            $error("Unknown MOV opcode: %b at PC: %h", opcode, rom_read_addr);
                             // synthesis translate_on
                         end
                     endcase
                 end
                 CPU_ALU_MODE: begin
-                    if (operand_c == REG_COUNT) begin // virtual result register is a special case
-                        result <= bus_wr_val; // write the result of the ALU operation to the result output
-                    end else begin
-                        regs[operand_c[REG_IDX_WIDTH-1:0]] <= bus_wr_val; // write the result of the ALU operation to the destination register
-                    end
-                end
-                CPU_CMP_MODE: begin
-                    cmp_flags_reg <= bus_wr_val; // store the comparison result in the cmp_flags_reg
+                    if (opcode != CPU_CMP) begin
+                        if (operand_c == REG_COUNT) begin // virtual result register is a special case
+                            result <= bus_wr_val; // write the result of the ALU operation to the result output
+                        end else begin
+                            regs[operand_c[REG_IDX_WIDTH-1:0]] <= bus_wr_val; // write the result of the ALU operation to the destination register
+                        end 
+                    end 
+
+                    cmp_flags_reg <= alu_flags; // store the comparison result in the cmp_flags_reg
                 end
                 CPU_JMP_MODE: begin
                     // jump does not write to any register, just changes PC. 
@@ -256,7 +257,7 @@ module CPU(
                 end
                 default: begin
                     // synthesis translate_off
-                    $error("Unknown instruction mode: %b", instruction_mode);
+                    $error("Unknown instruction mode: %b at PC: %h", instruction_mode, rom_read_addr);
                     // synthesis translate_on
                 end 
             endcase

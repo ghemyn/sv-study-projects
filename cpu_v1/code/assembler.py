@@ -1,6 +1,9 @@
 import sys
 from enum import Enum
 
+CPU_OP_WIDTH = 4
+CPU_MODE_WIDTH = 2
+
 class MOVOp(Enum):
     MOVRR = 0b000
     MOVRM = 0b001
@@ -14,35 +17,35 @@ class ALUOp(Enum):
     OR  = 0b011
     NOT = 0b100
     XOR = 0b101
-
-class CMPOp(Enum):
-    CMP = 0b000
+    CMP = 0b110
 
 class JMPOp(Enum):
-    JMP  = 0b000
-    JZ   = 0b001
-    JNZ  = 0b010
-    JL   = 0b011
-    JLE  = 0b100
-    JG   = 0b101
-    JGE  = 0b110
-    HALT = 0b111
+    JMP  = 0b0000
+    JE   = 0b0001
+    JNE  = 0b0010
+    JL   = 0b0011
+    JLE  = 0b0100
+    JG   = 0b0101
+    JGE  = 0b0110
+    HALT = 0b0111
+    JUL  = 0b1000
+    JULE = 0b1001
+    JUG  = 0b1010
+    JUGE = 0b1011
 
 class IMode(Enum):
     MOV  = 0b00
     ALU  = 0b01
-    CMP  = 0b10
-    JUMP = 0b11
+    JUMP = 0b10
 
 IMOD_DICT = {
     IMode.MOV: MOVOp,
     IMode.ALU: ALUOp,
-    IMode.CMP: CMPOp,
     IMode.JUMP: JMPOp
 }
 
 OPCODE_DICT = {
-    op.name.lower(): (mode.value << 6) | (op.value << 3) | 0b000
+    op.name.lower(): ((mode.value << (8-CPU_MODE_WIDTH)) | (op.value)) & 0xFF
     for [mode, enum_class] in IMOD_DICT.items()
     for op in enum_class
 }

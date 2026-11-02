@@ -17,7 +17,7 @@ loop_generate:
     add r1 r1 r1 ; r1 = r1 * 2
     
     movrm r1 r0 ; store random value in ram[r0]
-    
+            
     add r0 r6 r0 ; increment loop counter
     cmp r0 r7
     jl loop_generate
@@ -51,7 +51,8 @@ outer_loop:
         movmr r1 r3
 
         cmp r2 r3
-        jl no_swap
+        ;jul no_swap ; unsigned comparison
+        jl no_swap ; signed comparison
         
         ; swap ram[i] and ram[j]
         movrm r2 r1
