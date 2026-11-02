@@ -1,5 +1,6 @@
 `include "pc.sv"
 `include "rom.sv"
+`include "ram.sv"
 `include "decoder.sv"
 `include "alu.sv"
 `include "comparator.sv"
@@ -12,7 +13,11 @@ module CPU(
     output logic [BIT_DEPTH - 1 : 0] result
 );
     logic [BIT_DEPTH - 1 : 0] rom_read_addr;
-    logic [BIT_DEPTH - 1 : 0] rom_read_data [3:0]; // read a full 32-bit word at a time (unaligned)
+    logic [3:0][BIT_DEPTH - 1 : 0] rom_read_data; // read a full 32-bit word at a time (unaligned)
+
+    logic ram_we; // write-enable for the RAM
+    logic [BIT_DEPTH - 1 : 0] ram_rw_addr;
+    logic [BIT_DEPTH - 1 : 0] ram_read_data;
 
     instruction_mode_t instruction_mode;
     logic [CPU_OP_WIDTH-1:0] opcode;
@@ -39,7 +44,14 @@ module CPU(
 
     PC pc( .clk(clk), .rst_n(rst_n), .we(pc_we), .in(bus_wr_val), .inc_by(instruction_size), .out(rom_read_addr) );
     
-    ROM rom( .addr(rom_read_addr), .rval(rom_read_data) );
+    CPU_ROM #(
+        .SIZE(ROM_SIZE),
+        .FIRMWARE_FILE("code/bubble_sort.bin")
+    ) rom ( .addr(rom_read_addr), .rval(rom_read_data) );
+
+    CPU_RAM #(
+        .SIZE(RAM_SIZE)
+    ) ram( .clk(clk), .rst_n(rst_n), .we(ram_we), .addr(ram_rw_addr), .wval(bus_wr_val), .rval(ram_read_data) );
 
     DECODER decoder( 
         .rst_n(rst_n),
@@ -54,54 +66,51 @@ module CPU(
         .operand_c(operand_c) 
     );
     
-    // RAM ram( .addr(rom_read_addr), .rval() );
-
-    ALU alu ( .a(bus_rd_val1), .b(bus_rd_val2), .op(opcode), .result(alu_result) );
+    CPU_ALU alu ( .a(bus_rd_val1), .b(bus_rd_val2), .op(opcode), .result(alu_result) );
     COMP comp( .a(bus_rd_val1), .b(bus_rd_val2), .op(opcode), .result(comp_result) );
-
+    
     always_comb begin
         case (instruction_mode)
-            MOV_MODE: begin
+            CPU_MOV_MODE: begin
                 case (opcode)
-                    MOVRR: begin
+                    CPU_MOVRR: begin
                         bus_rd_val1 = regs[operand_a[REG_IDX_WIDTH-1:0]]; // write the value of operand_a to the destination register
                     end
-                    MOVRM: begin
+                    CPU_MOVRM: begin
                         bus_rd_val1 = regs[operand_a[REG_IDX_WIDTH-1:0]];
                     end
-                    MOVMR: begin
-                        $warning("MOVMR is not implemented yet. Returning placeholder value.");
-                        bus_rd_val1 = 8'h67; // placeholder value for memory-to-memory move
+                    CPU_MOVMR: begin
+                        bus_rd_val1 = ram_read_data;
                     end
-                    MOVMM: begin
-                        $warning("MOVMM is not implemented yet. Returning placeholder value.");
-                        bus_rd_val1 = 8'h67; // placeholder value for memory-to-memory move
-                    end
-                    MOVIR: begin
+                    CPU_MOVIR: begin
                         bus_rd_val1 = operand_a; // immediate value is in operand_a
                     end
                     default: begin
+                        // synthesis translate_off
                         $error("Unknown MOV opcode: %b", opcode);
+                        // synthesis translate_on
                         bus_rd_val1 = 8'hFF; // invalid
                     end
                 endcase
 
                 bus_rd_val2 = 0; // not used
             end
-            ALU_MODE: begin
+            CPU_ALU_MODE: begin
                 bus_rd_val1 = regs[operand_a[REG_IDX_WIDTH-1:0]];
                 bus_rd_val2 = regs[operand_b[REG_IDX_WIDTH-1:0]];
             end 
-            CMP_MODE: begin 
+            CPU_CMP_MODE: begin 
                 bus_rd_val1 = regs[operand_a[REG_IDX_WIDTH-1:0]];
                 bus_rd_val2 = regs[operand_b[REG_IDX_WIDTH-1:0]];
             end
-            JMP_MODE: begin
+            CPU_JMP_MODE: begin
                 bus_rd_val1 = operand_a; // jmp to the address in operand_a
                 bus_rd_val2 = 0; // unused
             end
             default: begin
+                // synthesis translate_off
                 $error("Unknown instruction mode: %b", instruction_mode);
+                // synthesis translate_on
                 bus_rd_val1 = 0;
                 bus_rd_val2 = 0;
             end
@@ -112,10 +121,10 @@ module CPU(
     // A single block cannot read and write using logic that could technically create a combinational loop
     always_comb begin
         case (instruction_mode)
-            MOV_MODE: bus_wr_val = bus_rd_val1;
-            ALU_MODE: bus_wr_val = alu_result;
-            CMP_MODE: bus_wr_val = comp_result;
-            JMP_MODE: bus_wr_val = bus_rd_val1;
+            CPU_MOV_MODE: bus_wr_val = bus_rd_val1;
+            CPU_ALU_MODE: bus_wr_val = alu_result;
+            CPU_CMP_MODE: bus_wr_val = comp_result;
+            CPU_JMP_MODE: bus_wr_val = bus_rd_val1;
             default:  bus_wr_val = 8'hFF; // invalid
         endcase
     end
@@ -127,24 +136,63 @@ module CPU(
         cmp_greater = (cmp_flags_reg[3]);
 
         case (instruction_mode)
-            MOV_MODE: pc_we = 1'b0; // MOV instructions always increment PC
-            ALU_MODE: pc_we = 1'b0; // ALU instructions always increment PC
-            CMP_MODE: pc_we = 1'b0; // CMP instructions always increment PC
-            JMP_MODE: begin
+            CPU_MOV_MODE: pc_we = 1'b0; // MOV instructions always increment PC
+            CPU_ALU_MODE: pc_we = 1'b0; // ALU instructions always increment PC
+            CPU_CMP_MODE: pc_we = 1'b0; // CMP instructions always increment PC
+            CPU_JMP_MODE: begin
                 case (opcode)
-                    JMP: pc_we = 1'b1; // always jump
-                    JZ: pc_we = cmp_zero;
-                    JNZ: pc_we = ~cmp_zero;
-                    JL: pc_we = cmp_less;
-                    JLE: pc_we = cmp_less | cmp_equal;
-                    JG: pc_we = cmp_greater;
-                    JGE: pc_we = cmp_greater | cmp_equal;
-                    HALT: pc_we = 1'b0; // HALT increments PC by 0 - therefore halting the CPU
+                    CPU_JMP: pc_we = 1'b1; // always jump
+                    CPU_JZ: pc_we = cmp_zero;
+                    CPU_JNZ: pc_we = ~cmp_zero;
+                    CPU_JL: pc_we = cmp_less;
+                    CPU_JLE: pc_we = cmp_less | cmp_equal;
+                    CPU_JG: pc_we = cmp_greater;
+                    CPU_JGE: pc_we = cmp_greater | cmp_equal;
+                    CPU_HALT: pc_we = 1'b0; // HALT increments PC by 0 - therefore halting the CPU
                     default: begin
+                        // synthesis translate_off
                         $error("Unknown JUMP opcode: %b", opcode);
+                        // synthesis translate_on
                         pc_we = 1'b0; // unknown instruction mode, do not overwrite PC
                     end
                 endcase
+            end
+        endcase
+    end
+
+    always_comb begin
+        case (instruction_mode)
+            CPU_MOV_MODE: begin
+                case (opcode)
+                    CPU_MOVRR: ram_rw_addr = 0; // not used
+                    CPU_MOVRM: ram_rw_addr = regs[operand_c[REG_IDX_WIDTH-1:0]]; // write to RAM at address in [operand_c]
+                    CPU_MOVMR: ram_rw_addr = regs[operand_a[REG_IDX_WIDTH-1:0]]; // read from RAM at address in [operand_a]
+                    CPU_MOVIR: ram_rw_addr = 0; // not used
+                    default: begin
+                        // synthesis translate_off
+                        $error("Unknown MOV opcode: %b", opcode);
+                        // synthesis translate_on
+                        ram_rw_addr = 0; // default address to avoid latches
+                    end
+                endcase
+
+                ram_we = (opcode == CPU_MOVRM); // write to RAM only for MOVRM
+            end
+            CPU_ALU_MODE: begin
+                ram_we = 1'b0; // ALU instructions do not write to RAM
+                ram_rw_addr = 0; // default address to avoid latches
+            end
+            CPU_CMP_MODE: begin 
+                ram_we = 1'b0; // CMP instructions do not write to RAM
+                ram_rw_addr = 0; // default address to avoid latches
+            end
+            CPU_JMP_MODE: begin
+                ram_we = 1'b0; // JMP instructions do not write to RAM
+                ram_rw_addr = 0; // default address to avoid latches
+            end
+            default: begin
+                ram_we = 1'b0; // unknown instruction mode, do not write to RAM
+                ram_rw_addr = 0; // default address to avoid latches
             end
         endcase
     end
@@ -158,31 +206,27 @@ module CPU(
             result <= '0;
         end else begin
             case (instruction_mode)
-                MOV_MODE: begin
+                CPU_MOV_MODE: begin
                     case (opcode)
-                        MOVRR: begin
+                        CPU_MOVRR: begin
                             if (operand_c == REG_COUNT) begin // virtual result register is a special case
                                 result <= bus_wr_val; // write the value of operand_a to the result output
                             end else begin
                                 regs[operand_c[REG_IDX_WIDTH-1:0]] <= bus_wr_val; // write the value of operand_a to the destination register
                             end
                         end
-                        MOVRM: begin
-                            // Not implemented: would read from register and write to memory
-                            $warning("MOVRM is not implemented yet. No action taken.");
+                        CPU_MOVRM: begin
+                            // MOVRM does not write to any register 
+                            // data moves internally in the RAM module on clk posedge
                         end
-                        MOVMR: begin
+                        CPU_MOVMR: begin
                             if (operand_c == REG_COUNT) begin // virtual result register is a special case
-                                result <= 8'h67; // write the value of operand_a to the result output
+                                result <= bus_wr_val; // write the value of operand_a to the result output
                             end else begin
-                                regs[operand_c[REG_IDX_WIDTH-1:0]] <= 8'h67; // write the value of operand_a to the destination register
+                                regs[operand_c[REG_IDX_WIDTH-1:0]] <= bus_wr_val; // write the value of operand_a to the destination register
                             end
                         end
-                        MOVMM: begin
-                            $warning("MOVMM is not implemented yet. No action taken.");
-                            // Not implemented: would read from memory and write to memory
-                        end
-                        MOVIR: begin
+                        CPU_MOVIR: begin
                             if (operand_c == REG_COUNT) begin // virtual result register is a special case
                                 result <= bus_wr_val; // write the immediate value (operand_b) to the result output
                             end else begin
@@ -190,26 +234,30 @@ module CPU(
                             end
                         end
                         default: begin
+                            // synthesis translate_off
                             $error("Unknown MOV opcode: %b", opcode);
+                            // synthesis translate_on
                         end
                     endcase
                 end
-                ALU_MODE: begin
+                CPU_ALU_MODE: begin
                     if (operand_c == REG_COUNT) begin // virtual result register is a special case
                         result <= bus_wr_val; // write the result of the ALU operation to the result output
                     end else begin
                         regs[operand_c[REG_IDX_WIDTH-1:0]] <= bus_wr_val; // write the result of the ALU operation to the destination register
                     end
                 end
-                CMP_MODE: begin
+                CPU_CMP_MODE: begin
                     cmp_flags_reg <= bus_wr_val; // store the comparison result in the cmp_flags_reg
                 end
-                JMP_MODE: begin
+                CPU_JMP_MODE: begin
                     // jump does not write to any register, just changes PC. 
                     // logic implemented in the PC itself
                 end
                 default: begin
+                    // synthesis translate_off
                     $error("Unknown instruction mode: %b", instruction_mode);
+                    // synthesis translate_on
                 end 
             endcase
         end

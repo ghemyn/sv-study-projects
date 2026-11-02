@@ -5,8 +5,7 @@ class MOVOp(Enum):
     MOVRR = 0b000
     MOVRM = 0b001
     MOVMR = 0b010
-    MOVMM = 0b011
-    MOVIR = 0b100
+    MOVIR = 0b011
 
 class ALUOp(Enum):
     ADD = 0b000
@@ -83,41 +82,80 @@ output_data = []
 
 with open(src_file, "r") as f:
     lines = f.readlines()
+    labels = dict()
+    for pass_num in range(2):
+        read_bytes = 0
+        for line in lines:
+            # remove the comment
+            semicolon_pos = line.find(';')
+            if semicolon_pos != -1:
+                line = line[:semicolon_pos].strip()
 
-    for line in lines:
-        # remove the comment
-        semicolon_pos = line.find(';')
-        line = line[:semicolon_pos].strip()
-
-        # verify the correctness of the line
-        parts = line.split()
-        if len(parts) == 0:
-            continue
-        elif len(parts) > 4:
-            print("err, len(parts)>4")
-            exit(1)
-            continue
-
-        if not verify_line(parts):
-            exit(1)
-            continue
-
-        for part in parts:
-            if part in REG_DICT:
-                output_data.append(REG_DICT[part])
-            elif part in OPCODE_DICT:
-                output_data.append(OPCODE_DICT[part])
-            elif part.startswith("0x"):
-                output_data.append(int(part[2:], 16))
-            elif part.startswith("0b"):
-                output_data.append(int(part[2:], 2))
-            elif part.isdigit():
-                output_data.append(int(part))
-            else:
-                print(f"err, unknown part: {part}")
+            # verify the correctness of the line
+            parts = line.split()
+            if len(parts) == 0:
+                continue
+            elif len(parts) > 4:
+                print("err, len(parts)>4")
                 exit(1)
+                continue
 
-        #print(parts)
+            if len(parts) == 1 and parts[0].endswith(':'):
+                label_name = parts[0][:-1]
+                
+                if label_name == "":
+                    print("err, empty label name")
+                    exit(1)
+                    continue
+
+                if label_name in OPCODE_DICT or label_name in REG_DICT:
+                    print(f"err, label {label_name} conflicts with a reserved token name")
+                    exit(1)
+                    continue
+
+                if label_name.startswith("0x") or label_name.startswith("0b") or label_name.isdigit():
+                    print(f"err, label {label_name} cannot be a number")
+                    exit(1)
+                    continue
+
+                if label_name in labels and pass_num == 0:
+                    print(f"err, label {label_name} already defined")
+                    exit(1)
+                    continue
+
+                if pass_num == 0:
+                    # print(f"[ASM] Found label: {label_name} at byte offset {read_bytes}")
+                    labels[label_name] = read_bytes
+                
+                continue
+
+            if pass_num == 1:
+                if not verify_line(parts):
+                    exit(1)
+                    continue
+
+            for part in parts:
+                if pass_num == 0:
+                    read_bytes += 1
+                    continue
+
+                if part in REG_DICT:
+                    output_data.append(REG_DICT[part])
+                elif part in OPCODE_DICT:
+                    output_data.append(OPCODE_DICT[part])
+                elif part.startswith("0x"):
+                    output_data.append(int(part[2:], 16))
+                elif part.startswith("0b"):
+                    output_data.append(int(part[2:], 2))
+                elif part.isdigit():
+                    output_data.append(int(part))
+                elif part in labels:
+                    output_data.append(labels[part])
+                else:
+                    print(f"err, unknown part: {part}")
+                    exit(1)
+
+            #print(parts)
 
 with open(output_file, "w") as f:
     for data in output_data:

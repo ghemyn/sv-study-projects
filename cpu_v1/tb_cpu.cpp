@@ -6,7 +6,7 @@
 #include "verilated.h"
 #include "verilated_vcd_c.h" // For waveform dumps
 
-constexpr uint32_t STEP_COUNT = 100;
+constexpr uint32_t STEP_COUNT = 5000;
 
 void init_rom(const std::unique_ptr<Vcpu>& top) {
     //std::cout << top->rom.mem.size() << std::endl;

@@ -1,3 +1,5 @@
+`ifndef COMPARATOR_SV
+`define COMPARATOR_SV
 `include "defines.sv"
 
 // Result format:
@@ -23,3 +25,5 @@ module COMP (
         result = { {BIT_DEPTH-4{1'b0}},greater, less, equal, zero};
     end
 endmodule
+
+`endif
