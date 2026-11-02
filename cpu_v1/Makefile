@@ -27,7 +27,7 @@ BOARD     ?= tangnano20k
 
 # Tools (Ensure oss-cad-suite environment is sourced or tools are in PATH)
 YOSYS          ?= yosys
-NEXTPNR_GOWIN  ?= nextpnr-gowin
+NEXTPNR_GOWIN  ?= nextpnr-himbaechel
 GOWIN_PACK     ?= gowin_pack
 OPENFPGALOADER ?= openFPGALoader
 
@@ -56,13 +56,13 @@ $(SYNTH_JSON): $(SRCS) | $(BUILD_DIR)
 pnr: $(PNR_JSON)
 
 $(PNR_JSON): $(SYNTH_JSON) $(CST)
-	@echo "==> [2/3] Running Place & Route with nextpnr-gowin..."
+	@echo "==> [2/3] Running Place & Route with nextpnr-himbaechel..."
 	$(NEXTPNR_GOWIN) \
 		--json $(SYNTH_JSON) \
 		--write $@ \
 		--device $(DEVICE) \
-		--family $(FAMILY) \
-		--cst $(CST)
+		--vopt family=$(FAMILY) \
+		--vopt cst=$(CST)
 
 # Step 3: Bitstream Generation
 bitstream: $(BITSTREAM)

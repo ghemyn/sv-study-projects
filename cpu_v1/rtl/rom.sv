@@ -5,7 +5,7 @@
 
 module CPU_ROM #(
     parameter SIZE = 256,
-    parameter FIRMWARE_FILE = ""
+    parameter FIRMWARE_FILE
 ) (
     input logic [BIT_DEPTH-1 : 0] addr,
     output logic [3 : 0][BIT_DEPTH-1 : 0] rval // read a full 32-bit word at a time (unaligned)
