@@ -12,18 +12,25 @@ module PC(
     input logic [2 : 0] inc_by,
     output logic [BIT_DEPTH - 1 : 0] out
 );
-    logic [BIT_DEPTH-1 : 0] inc_in;
-    logic [BIT_DEPTH-1 : 0] inc_out;
-    REG ireg ( .clk(clk), .rst_n(rst_n), .we(1'b1), .wval(inc_out), .rval(inc_in) );
-
+    logic [BIT_DEPTH - 1 : 0] pc_reg; // register value
+    logic [BIT_DEPTH-1 : 0] next_pc; // next value of the PC
+    
     always_comb begin
         if (we) begin
-            inc_out = in;
+            next_pc = in;
         end else begin
-            inc_out = inc_in + { {(BIT_DEPTH - 3){1'b0}}, inc_by };
+            next_pc = pc_reg + { {(BIT_DEPTH - 3){1'b0}}, inc_by };
         end
         
-        out = inc_in; 
+        out = pc_reg; 
+    end
+
+    always_ff @( posedge clk or negedge rst_n ) begin
+        if (!rst_n) begin
+            pc_reg <= '0;
+        end else begin
+            pc_reg <= next_pc;
+        end
     end
 
 endmodule
