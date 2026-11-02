@@ -1,7 +1,6 @@
 `ifndef PC_SV
 `define PC_SV
 
-`include "reg.sv"
 `include "defines.sv"
 
 module PC(
