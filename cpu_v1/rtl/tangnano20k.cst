@@ -3,6 +3,10 @@
 IO_LOC "clk" 4;
 IO_PORT "clk" PULL_MODE=NONE DRIVE=OFF;
 
+// S1 pushbutton, active low
+IO_LOC "rst_n" 88;
+IO_PORT "rst_n" PULL_MODE=UP IO_TYPE=LVCMOS33;
+
 // Onboard LEDs (pins 15 to 20, active low)
 IO_LOC "led[0]" 15;
 IO_PORT "led[0]" PULL_MODE=UP DRIVE=8;
@@ -21,3 +25,27 @@ IO_PORT "led[4]" PULL_MODE=UP DRIVE=8;
 
 IO_LOC "led[5]" 20;
 IO_PORT "led[5]" PULL_MODE=UP DRIVE=8;
+
+IO_LOC "result[0]" 25;
+IO_PORT "result[0]" IO_TYPE=LVCMOS33 DRIVE=8;
+
+IO_LOC "result[1]" 26;
+IO_PORT "result[1]" IO_TYPE=LVCMOS33 DRIVE=8;
+
+IO_LOC "result[2]" 27;
+IO_PORT "result[2]" IO_TYPE=LVCMOS33 DRIVE=8;
+
+IO_LOC "result[3]" 28;
+IO_PORT "result[3]" IO_TYPE=LVCMOS33 DRIVE=8;
+
+IO_LOC "result[4]" 29;
+IO_PORT "result[4]" IO_TYPE=LVCMOS33 DRIVE=8;
+
+IO_LOC "result[5]" 30;
+IO_PORT "result[5]" IO_TYPE=LVCMOS33 DRIVE=8;
+
+IO_LOC "result[6]" 41;
+IO_PORT "result[6]" IO_TYPE=LVCMOS33 DRIVE=8;
+
+IO_LOC "result[7]" 42;
+IO_PORT "result[7]" IO_TYPE=LVCMOS33 DRIVE=8;
