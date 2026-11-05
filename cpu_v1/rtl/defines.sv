@@ -1,14 +1,22 @@
 `ifndef DEFINES_SV_H
 `define DEFINES_SV_H
 
-parameter BIT_DEPTH = 8;
+parameter BIT_DEPTH = 16;
 parameter CPU_OP_WIDTH = 4;
 parameter CPU_MODE_WIDTH = 2;
 // CPU_MODE_WIDTH + CPU_OP_WIDTH must be <= BIT_DEPTH
 parameter REG_COUNT = 8;
 
+parameter SCREEN_WIDTH = 96;
+parameter SCREEN_HEIGHT = 54;
+parameter BITS_PER_PIXEL = 2;
+parameter SCREEN_BITS = SCREEN_WIDTH * SCREEN_HEIGHT * BITS_PER_PIXEL * 3;
+
+parameter GENERAL_PURPOSE_RAM_BYTES = 128;
 parameter ROM_SIZE = 256;
-parameter RAM_SIZE = 64;
+parameter RAM_SIZE = /*SCREEN_BITS +*/ GENERAL_PURPOSE_RAM_BYTES;
+
+// SCREEN_BITS + GENERAL_PURPOSE_RAM_BITS must be <= 2^BIT_DEPTH
 
 `define DEFINES_SV_H
 `endif

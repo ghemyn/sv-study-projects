@@ -135,9 +135,9 @@ module DECODER(
                 // synthesis translate_off
                 $error("Unknown instruction mode: %b, in: %h", mode, {in[0], in[1], in[2], in[3]});
                 // synthesis translate_on
-                operand_a = 8'hFF; // invalid
-                operand_b = 8'hFF; // invalid
-                operand_c = 8'hFF; // invalid
+                operand_a = {BIT_DEPTH{1'b1}}; // invalid
+                operand_b = {BIT_DEPTH{1'b1}}; // invalid
+                operand_c = {BIT_DEPTH{1'b1}}; // invalid
                 instruction_size = 0; // halt
             end
         endcase

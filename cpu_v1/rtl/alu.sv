@@ -32,7 +32,7 @@ module CPU_ALU (
             CPU_SHR: result = a >> b; // SHR
             CPU_ASHL: result = $signed(a) <<< b; // ASHL
             CPU_ASHR: result = $signed(a) >>> b; // ASHR
-            default: result = 8'hFF; // default to all 1s for unknown opcodes   
+            default: result = {BIT_DEPTH{1'b1}}; // default to all 1s for unknown opcodes   
         endcase
     end
 endmodule

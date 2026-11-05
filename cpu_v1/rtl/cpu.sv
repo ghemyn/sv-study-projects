@@ -84,7 +84,7 @@ module CPU(
                         // synthesis translate_off
                         $error("Unknown MOV opcode: %b at PC: %h", opcode, rom_read_addr);
                         // synthesis translate_on
-                        bus_rd_val1 = 8'hFF; // invalid
+                        bus_rd_val1 = {BIT_DEPTH{1'b1}}; // invalid
                     end
                 endcase
 
@@ -115,7 +115,7 @@ module CPU(
             CPU_MOV_MODE: bus_wr_val = bus_rd_val1;
             CPU_ALU_MODE: bus_wr_val = alu_result;
             CPU_JMP_MODE: bus_wr_val = bus_rd_val1;
-            default:  bus_wr_val = 8'hFF; // invalid
+            default:  bus_wr_val = {BIT_DEPTH{1'b1}}; // invalid
         endcase
     end
 
