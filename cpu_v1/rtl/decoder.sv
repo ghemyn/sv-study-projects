@@ -35,7 +35,9 @@ typedef enum logic [CPU_OP_WIDTH-1:0] {
     CPU_MOVRR = 4'b0000,
     CPU_MOVRM = 4'b0001,
     CPU_MOVMR = 4'b0010,
-    CPU_MOVIR = 4'b0011
+    CPU_MOVIR = 4'b0011,
+    CPU_PUSH  = 4'b0100,
+    CPU_POP   = 4'b0101
 } mov_op_t;
 
 typedef enum logic [CPU_OP_WIDTH-1:0] {
@@ -93,10 +95,24 @@ module DECODER(
 
         case (mode)
             CPU_MOV_MODE: begin
-                operand_a = in[1]; // src
                 operand_b = 0;
-                operand_c = in[2]; // dst
-                instruction_size = 3;
+                case (opcode)
+                    CPU_PUSH: begin
+                        operand_a = in[1]; // src
+                        operand_c = 0; // not used
+                        instruction_size = 2;
+                    end
+                    CPU_POP: begin
+                        operand_a = 0; // not used
+                        operand_c = in[1]; // dst
+                        instruction_size = 2;
+                    end
+                    default: begin
+                        operand_a = in[1]; // src
+                        operand_c = in[2]; // dst
+                        instruction_size = 3;
+                    end
+                endcase
             end
             CPU_ALU_MODE: begin
                 case (opcode)

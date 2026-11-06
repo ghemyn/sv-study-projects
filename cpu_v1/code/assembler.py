@@ -9,6 +9,8 @@ class MOVOp(Enum):
     MOVRM = 0b001
     MOVMR = 0b010
     MOVIR = 0b011
+    PUSH  = 0b100
+    POP   = 0b101
 
 class ALUOp(Enum):
     ADD  = 0b0000
@@ -77,6 +79,12 @@ def verify_line(parts: list[str]) -> bool:
         if parts[2] not in REG_DICT:
             print(f"err, unknown register: {parts[2]}")
             return False
+
+    if parts[0] in ['push', 'pop']:
+        if parts[1] not in REG_DICT:
+            print(f"err, unknown register: {parts[1]}")
+            return False
+        
     return True
 
 if len(sys.argv) < 3:

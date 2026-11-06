@@ -6,6 +6,13 @@
 
 `include "defines.sv"
 
+/// TODO:
+// - [x] Implement stack pointer register
+// - [x] Implement stack push
+// - [x] Implement stack pop
+// - [] Implement CALL instruction
+// - [] Implement RET instruction
+
 module CPU(
     input logic clk,
     input logic rst_n,
@@ -31,10 +38,13 @@ module CPU(
     logic pc_we; // write-enable for the program counter
     logic cmp_eq, cmp_sl, cmp_sg, cmp_ul, cmp_ug;
     logic [BIT_DEPTH - 1 : 0] cmp_flags_reg; // register to hold comparison result
-    logic [BIT_DEPTH - 1 : 0] regs [REG_COUNT-1 : 0];
     logic [BIT_DEPTH - 1 : 0] bus_wr_val;
     logic [BIT_DEPTH - 1 : 0] bus_rd_val1;
     logic [BIT_DEPTH - 1 : 0] bus_rd_val2;
+
+    // regs[0:REG_COUNT-1] are general purpose registers
+    // regs[REG_COUNT-1] is the stack pointer
+    logic [BIT_DEPTH - 1 : 0] regs [REG_COUNT-1 : 0];
 
     localparam int REG_IDX_WIDTH = $clog2(REG_COUNT);
 
@@ -80,6 +90,12 @@ module CPU(
                     CPU_MOVIR: begin
                         bus_rd_val1 = operand_a; // immediate value is in operand_a
                     end
+                    CPU_PUSH: begin
+                        bus_rd_val1 = regs[operand_a[REG_IDX_WIDTH-1:0]]; // value to push is in operand_a
+                    end
+                    CPU_POP: begin
+                        bus_rd_val1 = ram_read_data; // value to pop is read from RAM
+                    end
                     default: begin
                         // synthesis translate_off
                         $error("Unknown MOV opcode: %b at PC: %h", opcode, rom_read_addr);
@@ -112,7 +128,7 @@ module CPU(
     // A single block cannot read and write using logic that could technically create a combinational loop
     always_comb begin
         case (instruction_mode)
-            CPU_MOV_MODE: bus_wr_val = bus_rd_val1;
+            CPU_MOV_MODE: bus_wr_val = bus_rd_val1; // case between POP and the rest - for POP read ADDR-1
             CPU_ALU_MODE: bus_wr_val = alu_result;
             CPU_JMP_MODE: bus_wr_val = bus_rd_val1;
             default:  bus_wr_val = {BIT_DEPTH{1'b1}}; // invalid
@@ -172,6 +188,8 @@ module CPU(
                     CPU_MOVRM: ram_rw_addr = regs[operand_c[REG_IDX_WIDTH-1:0]]; // write to RAM at address in [operand_c]
                     CPU_MOVMR: ram_rw_addr = regs[operand_a[REG_IDX_WIDTH-1:0]]; // read from RAM at address in [operand_a]
                     CPU_MOVIR: ram_rw_addr = 0; // not used
+                    CPU_PUSH:  ram_rw_addr = regs[REG_COUNT-1]; // write to stack
+                    CPU_POP:   ram_rw_addr = regs[REG_COUNT-1] + 1; // read from stack at (reg+1 -- previous value)
                     default: begin
                         // synthesis translate_off
                         $error("Unknown MOV opcode: %b at PC: %d", opcode, rom_read_addr);
@@ -180,7 +198,7 @@ module CPU(
                     end
                 endcase
 
-                ram_we = (opcode == CPU_MOVRM); // write to RAM only for MOVRM
+                ram_we = (opcode == CPU_MOVRM || opcode == CPU_PUSH); // write to RAM only for MOVRM
             end
             CPU_ALU_MODE: begin
                 ram_we = 1'b0; // ALU instructions do not write to RAM
@@ -199,9 +217,11 @@ module CPU(
     
     always_ff @( posedge clk or negedge rst_n ) begin
         if (!rst_n) begin
-            for (int i = 0; i < REG_COUNT; i++) begin
+            for (int i = 0; i < REG_COUNT-1; i++) begin
                 regs[i] <= '0;
             end
+
+            regs[REG_COUNT-1] <= STACK_BYTES - 1; // initialize stack pointer to the top of the STACK
             cmp_flags_reg <= '0;
             result <= '0;
         end else begin
@@ -231,6 +251,22 @@ module CPU(
                                 result <= bus_wr_val; // write the immediate value (operand_b) to the result output
                             end else begin
                                 regs[operand_c[REG_IDX_WIDTH-1:0]] <= bus_wr_val; // write the immediate value (operand_b) to the destination register (operand_c)
+                            end
+                        end
+                        CPU_PUSH: begin
+                            // PUSH does not write to any register 
+                            // data moves internally in the RAM module on clk posedge
+                            regs[REG_COUNT-1] <= regs[REG_COUNT-1] - 1; // decrement stack pointer
+                        end
+                        CPU_POP: begin
+                            if (operand_c == REG_COUNT) begin // virtual result register is a special case
+                                result <= bus_wr_val; // write the value of operand_a to the result output
+                            end else begin
+                                regs[operand_c[REG_IDX_WIDTH-1:0]] <= bus_wr_val; // write the value of operand_a to the destination register
+                            end
+        
+                            if (operand_c != REG_COUNT-1) begin 
+                                regs[REG_COUNT-1] <= regs[REG_COUNT-1] + 1; // increment stack pointer
                             end
                         end
                         default: begin
