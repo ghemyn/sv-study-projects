@@ -6,39 +6,45 @@
 #include "verilated.h"
 #include "verilated_vcd_c.h" // For waveform dumps
 
-constexpr uint32_t STEP_COUNT = 5000;
-
-void init_rom(const std::unique_ptr<Vcpu>& top) {
-    //std::cout << top->rom.mem.size() << std::endl;
-    // top->rom.mem[0] = 0x00000000; // NOP
+consteval uint64_t get_clk_period_ps(double clk_hz) {
+    return static_cast<uint64_t>(10e12 / clk_hz);
 }
 
+consteval uint64_t get_max_step_count(double realtime_sec, double clk_hz) {
+    return static_cast<uint64_t>(realtime_sec * clk_hz);
+}
+
+constexpr double CLK_HZ = 20.0 * 10e5; // MHz
+constexpr double SIMULATION_REALTIME_SEC = 0.050; // seconds
+
+constexpr uint64_t CLK_PERIOD_PS = get_clk_period_ps(CLK_HZ);
+constexpr uint64_t MAX_STEP_COUNT = get_max_step_count(SIMULATION_REALTIME_SEC, CLK_HZ);
+
 int main(int argc, char** argv) {
-    Verilated::commandArgs(argc, argv);
-    Verilated::traceEverOn(true);
+    auto contextp = std::make_unique<VerilatedContext>();
+    contextp->commandArgs(argc, argv);
+    contextp->traceEverOn(true);
 
-    auto top = std::make_unique<Vcpu>();
+    auto top = std::make_unique<Vcpu>(contextp.get());
     auto tfp = std::make_unique<VerilatedVcdC>();
-
+    
     top->trace(tfp.get(), 99);
     tfp->open("dump.vcd");
-
-    uint64_t sim_time = 0;
 
     auto tick =[&]() {
         top->clk = 1;
         top->eval();    
         
-        tfp->dump(sim_time);
+        tfp->dump(contextp->time());
         
-        sim_time += 5;
-        
+        contextp->timeInc(CLK_PERIOD_PS / 2);
+
         top->clk = 0;
         top->eval();  
         
-        tfp->dump(sim_time);
+        tfp->dump(contextp->time());
         
-        sim_time += 5;
+        contextp->timeInc(CLK_PERIOD_PS / 2);
     };
 
     top->clk = 0;
@@ -51,11 +57,11 @@ int main(int argc, char** argv) {
     
     top->rst_n = 1; // Deassert reset
 
-    for(uint32_t i = 0; i < STEP_COUNT; ++i) {
+    for(uint64_t i = 0; i < MAX_STEP_COUNT; ++i) {
         tick();
     }
     
-    tfp->dump(sim_time);
+    tfp->dump(contextp->time());
 
     tfp->close();
     return 0;

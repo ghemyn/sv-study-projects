@@ -92,7 +92,7 @@ clean:
 
 compile: $(SIM_DIR)
 	@echo "==> Compiling SystemVerilog and C++ sources for Verilator simulation..."
-	verilator -Wall --cc --exe --build \
+	verilator -Wall --cc --exe --build --timescale 1ns/1ps \
 		-Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM \
 		--trace -I./$(SRC_DIR) --top-module $(SIM_TOP) --prefix V$(SIM_PREFIX) \
 		$(SIM_SRCS) ./tb_cpu.cpp -Mdir $(SIM_DIR) -o $(SIM_BINARY) -DSIMULATION=1
