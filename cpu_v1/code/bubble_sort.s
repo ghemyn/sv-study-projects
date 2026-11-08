@@ -1,5 +1,5 @@
 ; bubble sort test
-
+_start:
 movir 16 r7 ; r7 = N
 
 ; step 1: generate N random values

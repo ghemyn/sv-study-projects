@@ -3,7 +3,7 @@
 ; for(uint8_t i = 0; i < limit; i = i + inc) {
 ;     result = i;    
 ; }
-
+_start:
 movir 129 r2 ; r2 will be the "limit"
 movir 0 r3 ; r3 will be the "i"
 movir 1 r4 ; r4 will be the "inc"

@@ -1,4 +1,6 @@
-; test of the stack operations (PUSH, POP, CALL, RET)
+; test of the stack operations (PUSH, POP)
+
+_start:
 
 movir 0x10 r1
 movrr r1 rr

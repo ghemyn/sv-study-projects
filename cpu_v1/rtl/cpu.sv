@@ -1,17 +1,12 @@
-`include "pc.sv"
+`timescale 1ns / 1ps
+
+// `include "pc.sv"
 `include "rom.sv"
 `include "ram.sv"
 `include "decoder.sv"
 `include "alu.sv"
 
 `include "defines.sv"
-
-/// TODO:
-// - [x] Implement stack pointer register
-// - [x] Implement stack push
-// - [x] Implement stack pop
-// - [] Implement CALL instruction
-// - [] Implement RET instruction
 
 module CPU(
     input logic clk,
@@ -35,6 +30,7 @@ module CPU(
     logic [BIT_DEPTH - 1 : 0] alu_result;
     logic [BIT_DEPTH - 1 : 0] alu_flags;
 
+    logic [BIT_DEPTH-1 : 0] next_pc; // next value of the PC
     logic pc_we; // write-enable for the program counter
     logic cmp_eq, cmp_sl, cmp_sg, cmp_ul, cmp_ug;
     logic [BIT_DEPTH - 1 : 0] cmp_flags_reg; // register to hold comparison result
@@ -42,13 +38,16 @@ module CPU(
     logic [BIT_DEPTH - 1 : 0] bus_rd_val1;
     logic [BIT_DEPTH - 1 : 0] bus_rd_val2;
 
-    // regs[0:REG_COUNT-1] are general purpose registers
+    // regs[0:REG_COUNT-2] are general purpose registers
+    // regs[REG_COUNT-2] is the program counter
     // regs[REG_COUNT-1] is the stack pointer
     logic [BIT_DEPTH - 1 : 0] regs [REG_COUNT-1 : 0];
 
     localparam int REG_IDX_WIDTH = $clog2(REG_COUNT);
 
-    PC pc( .clk(clk), .rst_n(rst_n), .we(pc_we), .in(bus_wr_val), .inc_by(instruction_size), .out(rom_read_addr) );
+    // PC pc( 
+    //     .clk(clk), .rst_n(rst_n), .we(pc_we), .in(bus_wr_val), .inc_by(instruction_size), .out(rom_read_addr) 
+    // );
     
     CPU_ROM #(
         .SIZE(ROM_SIZE),
@@ -74,6 +73,7 @@ module CPU(
     
     CPU_ALU alu ( .a(bus_rd_val1), .b(bus_rd_val2), .op(opcode), .result(alu_result), .flags(alu_flags) );
 
+    // Determining read source
     always_comb begin
         case (instruction_mode)
             CPU_MOV_MODE: begin
@@ -96,6 +96,10 @@ module CPU(
                     CPU_POP: begin
                         bus_rd_val1 = ram_read_data; // value to pop is read from RAM
                     end
+                    CPU_PUSHINC: begin
+                        bus_rd_val1 = regs[operand_a[REG_IDX_WIDTH-1:0]]; // value to push is in operand_a
+                        // bus_rd_val2 = operand_b by default
+                    end
                     default: begin
                         // synthesis translate_off
                         $error("Unknown MOV opcode: %b at PC: %h", opcode, rom_read_addr);
@@ -104,7 +108,7 @@ module CPU(
                     end
                 endcase
 
-                bus_rd_val2 = 0; // not used
+                bus_rd_val2 = operand_b; // used only for PUSHINC, otherwise ignored
             end
             CPU_ALU_MODE: begin
                 bus_rd_val1 = regs[operand_a[REG_IDX_WIDTH-1:0]];
@@ -124,17 +128,23 @@ module CPU(
         endcase
     end
 
-    // Split from the always_comb block above to avoid combinational loop issue
-    // A single block cannot read and write using logic that could technically create a combinational loop
+    // Determining write source
     always_comb begin
         case (instruction_mode)
-            CPU_MOV_MODE: bus_wr_val = bus_rd_val1; // case between POP and the rest - for POP read ADDR-1
+            CPU_MOV_MODE: begin
+                if (opcode == CPU_PUSHINC) begin
+                    bus_wr_val = bus_rd_val1 + bus_rd_val2; // for PUSHINC, add the increment value
+                end else begin
+                    bus_wr_val = bus_rd_val1;
+                end
+            end
             CPU_ALU_MODE: bus_wr_val = alu_result;
             CPU_JMP_MODE: bus_wr_val = bus_rd_val1;
             default:  bus_wr_val = {BIT_DEPTH{1'b1}}; // invalid
         endcase
     end
 
+    // Conditional PC write enable logic
     always_comb begin
         cmp_eq = (cmp_flags_reg[0]);
         cmp_sl = (cmp_flags_reg[1]);
@@ -147,8 +157,8 @@ module CPU(
         // UL (unsigned less)(3), UG (unsigned greater)(4)
 
         case (instruction_mode)
-            CPU_MOV_MODE: pc_we = 1'b0; // MOV instructions always increment PC
-            CPU_ALU_MODE: pc_we = 1'b0; // ALU instructions always increment PC
+            CPU_MOV_MODE: pc_we = (operand_c == REG_COUNT-2) ? 1'b1 : 1'b0; // ovewrite PC only if the destination register is the PC
+            CPU_ALU_MODE: pc_we = (operand_c == REG_COUNT-2) ? 1'b1 : 1'b0; // ovewrite PC only if the destination register is the PC
             CPU_JMP_MODE: begin
                 case (opcode)
                     CPU_JMP: pc_we = 1'b1; // always jump
@@ -180,6 +190,7 @@ module CPU(
         endcase
     end
 
+    // Ram write enable and address logic
     always_comb begin
         case (instruction_mode)
             CPU_MOV_MODE: begin
@@ -190,6 +201,7 @@ module CPU(
                     CPU_MOVIR: ram_rw_addr = 0; // not used
                     CPU_PUSH:  ram_rw_addr = regs[REG_COUNT-1]; // write to stack
                     CPU_POP:   ram_rw_addr = regs[REG_COUNT-1] + 1; // read from stack at (reg+1 -- previous value)
+                    CPU_PUSHINC:  ram_rw_addr = regs[REG_COUNT-1]; // write to stack
                     default: begin
                         // synthesis translate_off
                         $error("Unknown MOV opcode: %b at PC: %d", opcode, rom_read_addr);
@@ -198,7 +210,8 @@ module CPU(
                     end
                 endcase
 
-                ram_we = (opcode == CPU_MOVRM || opcode == CPU_PUSH); // write to RAM only for MOVRM
+                // write to RAM
+                ram_we = (opcode == CPU_MOVRM || opcode == CPU_PUSH || opcode == CPU_PUSHINC); 
             end
             CPU_ALU_MODE: begin
                 ram_we = 1'b0; // ALU instructions do not write to RAM
@@ -215,6 +228,9 @@ module CPU(
         endcase
     end
     
+    assign rom_read_addr = regs[REG_COUNT-2]; // always read ROM at the current PC value
+    
+    // Register and result update logic
     always_ff @( posedge clk or negedge rst_n ) begin
         if (!rst_n) begin
             for (int i = 0; i < REG_COUNT-1; i++) begin
@@ -225,6 +241,10 @@ module CPU(
             cmp_flags_reg <= '0;
             result <= '0;
         end else begin
+            if (!pc_we) begin
+                regs[REG_COUNT-2] <= regs[REG_COUNT-2] + { {(BIT_DEPTH - 3){1'b0}}, instruction_size };
+            end
+
             case (instruction_mode)
                 CPU_MOV_MODE: begin
                     case (opcode)
@@ -269,6 +289,10 @@ module CPU(
                                 regs[REG_COUNT-1] <= regs[REG_COUNT-1] + 1; // increment stack pointer
                             end
                         end
+                        CPU_PUSHINC: begin
+                            // same as CPU_PUSH
+                            regs[REG_COUNT-1] <= regs[REG_COUNT-1] - 1;
+                        end
                         default: begin
                             // synthesis translate_off
                             $error("Unknown MOV opcode: %b at PC: %h", opcode, rom_read_addr);
@@ -288,8 +312,10 @@ module CPU(
                     cmp_flags_reg <= alu_flags; // store the comparison result in the cmp_flags_reg
                 end
                 CPU_JMP_MODE: begin
-                    // jump does not write to any register, just changes PC. 
-                    // logic implemented in the PC itself
+                    if (pc_we) begin
+                        // if the jump is taken, we can update the PC register with the jump address
+                        regs[REG_COUNT-2] <= bus_wr_val; 
+                    end
                 end
                 default: begin
                     // synthesis translate_off

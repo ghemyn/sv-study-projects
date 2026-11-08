@@ -1,3 +1,4 @@
+_start:
 movir 0xDE r0
 movir 0x00 r7
 movrm r0 r7 ; r0 -> ram[0x00]

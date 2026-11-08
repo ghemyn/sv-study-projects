@@ -1,3 +1,5 @@
+_start:
+
 movir 1 r0
 movir 1 r1
 

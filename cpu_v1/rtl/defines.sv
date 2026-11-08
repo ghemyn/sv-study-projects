@@ -6,7 +6,8 @@ parameter CPU_OP_WIDTH = 4;
 parameter CPU_MODE_WIDTH = 2;
 // CPU_MODE_WIDTH + CPU_OP_WIDTH must be <= BIT_DEPTH
 
-parameter REG_COUNT = 8;
+parameter REG_COUNT = 16;
+// regs[REG_COUNT-2] - program counter
 // regs[REG_COUNT-1] - stack pointer
 
 parameter STACK_BYTES = 32;

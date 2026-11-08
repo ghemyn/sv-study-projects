@@ -4,6 +4,15 @@ from enum import Enum
 CPU_OP_WIDTH = 4
 CPU_MODE_WIDTH = 2
 
+REG_COUNT = 16
+
+REG_DICT = {
+    **{f"r{i}": i for i in range(REG_COUNT)},
+    "rpc": REG_COUNT-2, # program counter
+    "rsp": REG_COUNT-1, # stack pointer
+    "rr": REG_COUNT # result register
+}
+
 class MOVOp(Enum):
     MOVRR = 0b000
     MOVRM = 0b001
@@ -11,6 +20,7 @@ class MOVOp(Enum):
     MOVIR = 0b011
     PUSH  = 0b100
     POP   = 0b101
+    PUSHINC = 0b110
 
 class ALUOp(Enum):
     ADD  = 0b0000
@@ -49,22 +59,30 @@ IMOD_DICT = {
     IMode.ALU: ALUOp,
     IMode.JUMP: JMPOp
 }
+OP_IMODE_DICT = {v: k for k, v in IMOD_DICT.items()}
+
+def parse_op(op: Enum) -> int:
+    return ((OP_IMODE_DICT[type(op)].value << (8-CPU_MODE_WIDTH)) | (op.value)) & 0xFF
+
+class PseudoOp(Enum):
+    # next instruction byte is the address to jump to
+    CALL = ( parse_op(MOVOp.PUSHINC), REG_DICT["rpc"], 5, parse_op(JMPOp.JMP) ) # inc by 5 to skip the entire CALL and dst address 
+    
+    # setting the rpc reg causes the PC to jump
+    RET = ( parse_op(MOVOp.POP), REG_DICT["rpc"] ) 
 
 OPCODE_DICT = {
-    op.name.lower(): ((mode.value << (8-CPU_MODE_WIDTH)) | (op.value)) & 0xFF
+    op.name.lower(): parse_op(op)
     for [mode, enum_class] in IMOD_DICT.items()
     for op in enum_class
 }
-
-REG_COUNT = 8
-
-REG_DICT = {
-    **{f"r{i}": i for i in range(REG_COUNT)},
-    "rr": REG_COUNT, # result register
+PSEUDOOP_DICT = {
+    op.name.lower(): op.value
+    for op in PseudoOp
 }
 
 def verify_line(parts: list[str]) -> bool:
-    if parts[0] not in OPCODE_DICT:
+    if parts[0] not in OPCODE_DICT and parts[0] not in PSEUDOOP_DICT:
         print(f"err, unknown opcode: {parts[0]}")
         return False
     
@@ -79,10 +97,14 @@ def verify_line(parts: list[str]) -> bool:
         if parts[2] not in REG_DICT:
             print(f"err, unknown register: {parts[2]}")
             return False
-
-    if parts[0] in ['push', 'pop']:
+    if parts[0] in ['push', 'pop', 'pushinc']:
         if parts[1] not in REG_DICT:
             print(f"err, unknown register: {parts[1]}")
+            return False
+
+    if parts[0] in ['pushinc']:
+        if len(parts) < 3:
+            print(f"err, missing increment value for pushinc")
             return False
         
     return True
@@ -99,7 +121,23 @@ with open(src_file, "r") as f:
     lines = f.readlines()
     labels = dict()
     for pass_num in range(2):
-        read_bytes = 0
+        read_bytes = 3 # first two bytes are reserved for the program entry point
+
+        if pass_num == 1:
+            # write the entry point to the output file
+            entry_point = labels.get("_start", -1)
+            if entry_point == -1:
+                print("err, no entry point \"_start\" found")
+                exit(1)
+
+            entry_point_ops = [parse_op(MOVOp.MOVIR), entry_point, REG_DICT["rpc"]]
+
+            if len(entry_point_ops) != 3:
+                print("err, entry point ops length != 3")
+                exit(1)
+            
+            output_data.extend(entry_point_ops)
+
         for line in lines:
             # remove the comment
             semicolon_pos = line.find(';')
@@ -151,13 +189,18 @@ with open(src_file, "r") as f:
 
             for part in parts:
                 if pass_num == 0:
-                    read_bytes += 1
+                    if part in PSEUDOOP_DICT:
+                        read_bytes += len(PSEUDOOP_DICT[part])
+                    else:
+                        read_bytes += 1
                     continue
 
                 if part in REG_DICT:
                     output_data.append(REG_DICT[part])
                 elif part in OPCODE_DICT:
                     output_data.append(OPCODE_DICT[part])
+                elif part in PSEUDOOP_DICT:
+                    output_data.extend(PSEUDOOP_DICT[part])
                 elif part.startswith("0x"):
                     output_data.append(int(part[2:], 16))
                 elif part.startswith("0b"):
@@ -173,6 +216,7 @@ with open(src_file, "r") as f:
                     exit(1)
 
             #print(parts)
+
 
 with open(output_file, "w") as f:
     for data in output_data:
