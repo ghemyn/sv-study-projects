@@ -118,7 +118,7 @@ module DECODER(
 
         unique case (instruction.mode)
             CPU_MOV_MODE: begin
-                unique case (mov_op_t'(instruction.opcode))
+                unique case (instruction.opcode.mov_op)
                     CPU_MOVRR,
                     CPU_MOVRM,
                     CPU_MOVMR,
@@ -149,7 +149,7 @@ module DECODER(
                 endcase
             end
             CPU_ALU_MODE: begin
-                unique case (alu_op_t'(instruction.opcode))
+                unique case (instruction.opcode.alu_op)
                     CPU_NOT: begin
                         instruction.operand_a = in[1]; // src
                         instruction.operand_c = in[2]; // dest
@@ -176,7 +176,7 @@ module DECODER(
                 endcase
             end
             CPU_JMP_MODE: begin
-                unique case (jmp_op_t'(instruction.opcode))
+                unique case (instruction.opcode.jmp_op)
                     CPU_JMP, 
                     CPU_JE, CPU_JNE, CPU_JL, CPU_JLE, CPU_JG, CPU_JGE,
                     CPU_JUL, CPU_JULE, CPU_JUG, CPU_JUGE: begin

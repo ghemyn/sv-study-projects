@@ -4,11 +4,11 @@
 `include "defines.sv"
 
 module CPU_ROM #(
-    parameter SIZE = 256,
+    parameter int SIZE = 256,
     parameter FIRMWARE_FILE
 ) (
     input logic [BIT_DEPTH-1 : 0] addr,
-    output logic [3 : 0][BIT_DEPTH-1 : 0] rval // read a full 32-bit word at a time (unaligned)
+    output logic [3 : 0][BIT_DEPTH-1 : 0] rval // read 4 words (unaligned) at once for variable-length instructions
 );
     localparam int ADDR_WIDTH = $clog2(SIZE);
 
@@ -38,7 +38,7 @@ module CPU_ROM #(
 
     always_comb begin
         logic [ADDR_WIDTH-1 : 0] addr_index;
-        
+
         addr_index = addr[ADDR_WIDTH-1 : 0];
 
         rval[0] = mem[addr_index];

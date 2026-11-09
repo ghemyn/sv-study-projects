@@ -49,11 +49,16 @@ module CPU(
     CPU_ROM #(
         .SIZE(ROM_SIZE),
         .FIRMWARE_FILE("code/bubble_sort.bin")
-    ) rom ( .addr(rom_read_addr), .rval(rom_read_data) );
+    ) rom ( 
+        .addr(rom_read_addr), .rval(rom_read_data) 
+    );
 
     CPU_RAM #(
         .SIZE(RAM_SIZE)
-    ) ram( .clk(clk), .rst_n(rst_n), .we(ram_we), .addr(ram_rw_addr), .wval(bus_wr_val), .rval(ram_read_data) );
+    ) ram( 
+        .clk(clk), .rst_n(rst_n), 
+        .we(ram_we), .addr(ram_rw_addr), .wval(bus_wr_val), .rval(ram_read_data) 
+    );
 
     DECODER decoder( 
         .rst_n(rst_n),
@@ -71,9 +76,9 @@ module CPU(
 
     // Determining read source
     always_comb begin
-        case (instruction.mode)
+        unique case (instruction.mode)
             CPU_MOV_MODE: begin
-                case (mov_op_t'(instruction.opcode))
+                unique case (instruction.opcode.mov_op)
                     CPU_MOVRR: begin
                         bus_rd_val1 = regs[instruction.operand_a[REG_IDX_WIDTH-1:0]]; // write the value of operand_a to the destination register
                     end
@@ -126,9 +131,9 @@ module CPU(
 
     // Determining write source
     always_comb begin
-        case (instruction.mode)
+        unique case (instruction.mode)
             CPU_MOV_MODE: begin
-                if (mov_op_t'(instruction.opcode) == CPU_PUSHINC) begin
+                if (instruction.opcode.mov_op == CPU_PUSHINC) begin
                     bus_wr_val = bus_rd_val1 + bus_rd_val2; // for PUSHINC, add the increment value
                 end else begin
                     bus_wr_val = bus_rd_val1;
@@ -136,17 +141,22 @@ module CPU(
             end
             CPU_ALU_MODE: bus_wr_val = alu_result;
             CPU_JMP_MODE: bus_wr_val = bus_rd_val1;
-            default:  bus_wr_val = {BIT_DEPTH{1'b1}}; // invalid
+            default: begin
+                // synthesis translate_off
+                $error("Unknown instruction mode: %b at PC: %h", instruction.mode, rom_read_addr);
+                // synthesis translate_on
+                bus_wr_val = {BIT_DEPTH{1'b1}}; // invalid
+            end
         endcase
     end
 
     // Conditional PC write enable logic
     always_comb begin
-        case (instruction.mode)
+        unique case (instruction.mode)
             CPU_MOV_MODE: pc_we = (instruction.operand_c == REG_COUNT-2) ? 1'b1 : 1'b0; // ovewrite PC only if the destination register is the PC
             CPU_ALU_MODE: pc_we = (instruction.operand_c == REG_COUNT-2) ? 1'b1 : 1'b0; // ovewrite PC only if the destination register is the PC
             CPU_JMP_MODE: begin
-                case (jmp_op_t'(instruction.opcode))
+                unique case (instruction.opcode.jmp_op)
                     CPU_JMP: pc_we = 1'b1; // always jump
                     CPU_JE: pc_we = cmp_flags_reg.eq;
                     CPU_JNE: pc_we = ~cmp_flags_reg.eq;
@@ -178,9 +188,9 @@ module CPU(
 
     // Ram write enable and address logic
     always_comb begin
-        case (instruction.mode)
+        unique case (instruction.mode)
             CPU_MOV_MODE: begin
-                case (mov_op_t'(instruction.opcode))
+                unique case (instruction.opcode.mov_op)
                     CPU_MOVRR: ram_rw_addr = 0; // not used
                     CPU_MOVRM: ram_rw_addr = regs[instruction.operand_c[REG_IDX_WIDTH-1:0]]; // write to RAM at address in [operand_c]
                     CPU_MOVMR: ram_rw_addr = regs[instruction.operand_a[REG_IDX_WIDTH-1:0]]; // read from RAM at address in [operand_a]
@@ -197,9 +207,9 @@ module CPU(
                 endcase
 
                 // write to RAM only for MOVRM, PUSH, and PUSHINC
-                ram_we = (mov_op_t'(instruction.opcode) == CPU_MOVRM ||
-                          mov_op_t'(instruction.opcode) == CPU_PUSH ||
-                          mov_op_t'(instruction.opcode) == CPU_PUSHINC); 
+                ram_we = (instruction.opcode.mov_op == CPU_MOVRM ||
+                          instruction.opcode.mov_op == CPU_PUSH ||
+                          instruction.opcode.mov_op == CPU_PUSHINC); 
             end
             CPU_ALU_MODE: begin
                 ram_we = 1'b0; // ALU instructions do not write to RAM
@@ -233,9 +243,9 @@ module CPU(
                 regs[REG_COUNT-2] <= regs[REG_COUNT-2] + { {(BIT_DEPTH - 3){1'b0}}, instruction.size };
             end
 
-            case (instruction.mode)
+            unique case (instruction.mode)
                 CPU_MOV_MODE: begin
-                    case (mov_op_t'(instruction.opcode))
+                    unique case (instruction.opcode.mov_op)
                         CPU_MOVRR: begin
                             if (instruction.operand_c == REG_COUNT) begin // virtual result register is a special case
                                 result <= bus_wr_val; // write the value of operand_a to the result output
@@ -290,7 +300,7 @@ module CPU(
                 end
                 CPU_ALU_MODE: begin
                     // Do not write when the ALU instruction is CMP
-                    if (alu_op_t'(instruction.opcode) != CPU_CMP) begin
+                    if (instruction.opcode.alu_op != CPU_CMP) begin
                         if (instruction.operand_c == REG_COUNT) begin // virtual result register is a special case
                             result <= bus_wr_val; // write the result of the ALU operation to the result output
                         end else begin
