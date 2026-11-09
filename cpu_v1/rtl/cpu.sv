@@ -13,7 +13,8 @@
 // - think about bus usage
 // - use enums and structures
 // - try to minimize repetition of logic and code
-// - add tests and verification
+
+/// TODO: add tests and verification
 
 module CPU(
     input logic clk,

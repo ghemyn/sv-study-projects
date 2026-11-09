@@ -2,35 +2,6 @@
 `define DECODER_SV
 `include "defines.sv"
 
-//////// ISA
-//
-//// COMPOSITION:
-// MODE [7:6] | OPCODE [5:3] | EMPTY [2:0] + (optional) OPERAND_A [7:0] + (optional) OPERAND_B [7:0] + (optional) OPERAND_C [7:0]
-//
-//// SET:
-/// moving: from src to dst
-// MOVRR src (register) dst (register)
-// MOVRM src (register) dst (memory)
-// MOVMR src (memory) dst (register)
-// MOVIR imm8 (immediate) dst (register)
-/// math: (a, b, dest are registers)
-// ADD a b dest
-// SUB a b dest
-// AND a b dest
-// OR a b dest
-// NOT a dest
-// XOR a b dest
-// CMP a b
-/// jumping: set PC to dst (address)
-// JMP dst
-// JZ dst
-// JNZ dst
-// JL dst
-// JLE dst
-// JG dst
-// JGE dst
-// HALT
-
 // @/docs/ISA.md
 typedef enum logic [CPU_OP_WIDTH-1:0] {
     CPU_MOVRR   = 4'b0000,
