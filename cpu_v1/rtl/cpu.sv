@@ -30,12 +30,11 @@ module CPU(
     instruction_t instruction;
 
     logic [BIT_DEPTH - 1 : 0] alu_result;
-    logic [BIT_DEPTH - 1 : 0] alu_flags;
+    cmp_flags_t alu_flags;
+    cmp_flags_t cmp_flags_reg;
 
     logic [BIT_DEPTH-1 : 0] next_pc; // next value of the PC
     logic pc_we; // write-enable for the program counter
-    logic cmp_eq, cmp_sl, cmp_sg, cmp_ul, cmp_ug;
-    logic [BIT_DEPTH - 1 : 0] cmp_flags_reg; // register to hold comparison result
     logic [BIT_DEPTH - 1 : 0] bus_wr_val;
     logic [BIT_DEPTH - 1 : 0] bus_rd_val1;
     logic [BIT_DEPTH - 1 : 0] bus_rd_val2;
@@ -64,13 +63,17 @@ module CPU(
         .instruction(instruction)
     );
     
-    CPU_ALU alu ( .a(bus_rd_val1), .b(bus_rd_val2), .op(instruction.opcode.bits), .result(alu_result), .flags(alu_flags) );
+    CPU_ALU alu ( 
+        .a(bus_rd_val1), .b(bus_rd_val2), 
+        .op(instruction.opcode.alu_op), 
+        .result(alu_result), .flags(alu_flags) 
+    );
 
     // Determining read source
     always_comb begin
         case (instruction.mode)
             CPU_MOV_MODE: begin
-                case (mov_op_t'(instruction.opcode.bits))
+                case (mov_op_t'(instruction.opcode))
                     CPU_MOVRR: begin
                         bus_rd_val1 = regs[instruction.operand_a[REG_IDX_WIDTH-1:0]]; // write the value of operand_a to the destination register
                     end
@@ -95,7 +98,7 @@ module CPU(
                     end
                     default: begin
                         // synthesis translate_off
-                        $error("Unknown MOV opcode: %b at PC: %h", instruction.opcode.bits, rom_read_addr);
+                        $error("Unknown MOV opcode: %b at PC: %h", instruction.opcode, rom_read_addr);
                         // synthesis translate_on
                         bus_rd_val1 = {BIT_DEPTH{1'b1}}; // invalid
                     end
@@ -125,7 +128,7 @@ module CPU(
     always_comb begin
         case (instruction.mode)
             CPU_MOV_MODE: begin
-                if (mov_op_t'(instruction.opcode.bits) == CPU_PUSHINC) begin
+                if (mov_op_t'(instruction.opcode) == CPU_PUSHINC) begin
                     bus_wr_val = bus_rd_val1 + bus_rd_val2; // for PUSHINC, add the increment value
                 end else begin
                     bus_wr_val = bus_rd_val1;
@@ -139,36 +142,26 @@ module CPU(
 
     // Conditional PC write enable logic
     always_comb begin
-        cmp_eq = (cmp_flags_reg[0]);
-        cmp_sl = (cmp_flags_reg[1]);
-        cmp_sg = (cmp_flags_reg[2]);
-        cmp_ul = (cmp_flags_reg[3]);
-        cmp_ug = (cmp_flags_reg[4]);
-
-        // cmp flags are set by the ALU at all times
-        // E (0), SL (signed less)(1), SG (signed greater)(2), 
-        // UL (unsigned less)(3), UG (unsigned greater)(4)
-
         case (instruction.mode)
             CPU_MOV_MODE: pc_we = (instruction.operand_c == REG_COUNT-2) ? 1'b1 : 1'b0; // ovewrite PC only if the destination register is the PC
             CPU_ALU_MODE: pc_we = (instruction.operand_c == REG_COUNT-2) ? 1'b1 : 1'b0; // ovewrite PC only if the destination register is the PC
             CPU_JMP_MODE: begin
-                case (jmp_op_t'(instruction.opcode.bits))
+                case (jmp_op_t'(instruction.opcode))
                     CPU_JMP: pc_we = 1'b1; // always jump
-                    CPU_JE: pc_we = cmp_eq;
-                    CPU_JNE: pc_we = ~cmp_eq;
-                    CPU_JL: pc_we = cmp_sl;
-                    CPU_JLE: pc_we = cmp_sl | cmp_eq;
-                    CPU_JG: pc_we = cmp_sg;
-                    CPU_JGE: pc_we = cmp_sg | cmp_eq;
+                    CPU_JE: pc_we = cmp_flags_reg.eq;
+                    CPU_JNE: pc_we = ~cmp_flags_reg.eq;
+                    CPU_JL: pc_we = cmp_flags_reg.sl;
+                    CPU_JLE: pc_we = cmp_flags_reg.sl | cmp_flags_reg.eq;
+                    CPU_JG: pc_we = cmp_flags_reg.sg;
+                    CPU_JGE: pc_we = cmp_flags_reg.sg | cmp_flags_reg.eq;
                     CPU_HALT: pc_we = 1'b0; // HALT increments PC by 0 - therefore halting the CPU
-                    CPU_JUL: pc_we = cmp_ul;
-                    CPU_JULE: pc_we = cmp_ul | cmp_eq;
-                    CPU_JUG: pc_we = cmp_ug;
-                    CPU_JUGE: pc_we = cmp_ug | cmp_eq;
+                    CPU_JUL: pc_we = cmp_flags_reg.ul;
+                    CPU_JULE: pc_we = cmp_flags_reg.ul | cmp_flags_reg.eq;
+                    CPU_JUG: pc_we = cmp_flags_reg.ug;
+                    CPU_JUGE: pc_we = cmp_flags_reg.ug | cmp_flags_reg.eq;
                     default: begin
                         // synthesis translate_off
-                        $error("Unknown JUMP opcode: %b at PC: %h", instruction.opcode.bits, rom_read_addr);
+                        $error("Unknown JUMP opcode: %b at PC: %h", instruction.opcode, rom_read_addr);
                         // synthesis translate_on
                         pc_we = 1'b0; // unknown instruction mode, do not overwrite PC
                     end
@@ -187,7 +180,7 @@ module CPU(
     always_comb begin
         case (instruction.mode)
             CPU_MOV_MODE: begin
-                case (mov_op_t'(instruction.opcode.bits))
+                case (mov_op_t'(instruction.opcode))
                     CPU_MOVRR: ram_rw_addr = 0; // not used
                     CPU_MOVRM: ram_rw_addr = regs[instruction.operand_c[REG_IDX_WIDTH-1:0]]; // write to RAM at address in [operand_c]
                     CPU_MOVMR: ram_rw_addr = regs[instruction.operand_a[REG_IDX_WIDTH-1:0]]; // read from RAM at address in [operand_a]
@@ -197,16 +190,16 @@ module CPU(
                     CPU_PUSHINC:  ram_rw_addr = regs[REG_COUNT-1]; // write to stack
                     default: begin
                         // synthesis translate_off
-                        $error("Unknown MOV opcode: %b at PC: %d", instruction.opcode.bits, rom_read_addr);
+                        $error("Unknown MOV opcode: %b at PC: %d", instruction.opcode, rom_read_addr);
                         // synthesis translate_on
                         ram_rw_addr = 0; // default address to avoid latches
                     end
                 endcase
 
                 // write to RAM only for MOVRM, PUSH, and PUSHINC
-                ram_we = (mov_op_t'(instruction.opcode.bits) == CPU_MOVRM ||
-                          mov_op_t'(instruction.opcode.bits) == CPU_PUSH ||
-                          mov_op_t'(instruction.opcode.bits) == CPU_PUSHINC); 
+                ram_we = (mov_op_t'(instruction.opcode) == CPU_MOVRM ||
+                          mov_op_t'(instruction.opcode) == CPU_PUSH ||
+                          mov_op_t'(instruction.opcode) == CPU_PUSHINC); 
             end
             CPU_ALU_MODE: begin
                 ram_we = 1'b0; // ALU instructions do not write to RAM
@@ -242,7 +235,7 @@ module CPU(
 
             case (instruction.mode)
                 CPU_MOV_MODE: begin
-                    case (mov_op_t'(instruction.opcode.bits))
+                    case (mov_op_t'(instruction.opcode))
                         CPU_MOVRR: begin
                             if (instruction.operand_c == REG_COUNT) begin // virtual result register is a special case
                                 result <= bus_wr_val; // write the value of operand_a to the result output
@@ -290,13 +283,14 @@ module CPU(
                         end
                         default: begin
                             // synthesis translate_off
-                            $error("Unknown MOV opcode: %b at PC: %h", instruction.opcode.bits, rom_read_addr);
+                            $error("Unknown MOV opcode: %b at PC: %h", instruction.opcode, rom_read_addr);
                             // synthesis translate_on
                         end
                     endcase
                 end
                 CPU_ALU_MODE: begin
-                    if (alu_op_t'(instruction.opcode.bits) != CPU_CMP) begin
+                    // Do not write when the ALU instruction is CMP
+                    if (alu_op_t'(instruction.opcode) != CPU_CMP) begin
                         if (instruction.operand_c == REG_COUNT) begin // virtual result register is a special case
                             result <= bus_wr_val; // write the result of the ALU operation to the result output
                         end else begin
